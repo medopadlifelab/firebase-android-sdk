@@ -75,6 +75,7 @@ public class FirebaseFunctions {
   FirebaseFunctions(
       Context context, String projectId, String region, ContextProvider contextProvider) {
     this.client = new OkHttpClient();
+
     this.serializer = new Serializer();
     this.contextProvider = Preconditions.checkNotNull(contextProvider);
     this.projectId = Preconditions.checkNotNull(projectId);

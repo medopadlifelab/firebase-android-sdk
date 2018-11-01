@@ -1,0 +1,20 @@
+[debug] [2018-10-20T17:28:22.847Z] ----------------------------------------------------------------------
+[debug] [2018-10-20T17:28:22.851Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Lion\AppData\Roaming\npm\node_modules\firebase-tools\bin\firebase auth:import accounts.json --hash-algo=SHA256 --rounds=1 --project=test-firebase-android-eed88 --debug
+[debug] [2018-10-20T17:28:22.852Z] CLI Version:   5.1.1
+[debug] [2018-10-20T17:28:22.853Z] Platform:      win32
+[debug] [2018-10-20T17:28:22.854Z] Node Version:  v10.7.0
+[debug] [2018-10-20T17:28:22.855Z] Time:          Sat Oct 20 2018 20:58:22 GMT+0330 (Iran Standard Time)
+[debug] [2018-10-20T17:28:22.855Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2018-10-20T17:28:22.865Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2018-10-20T17:28:22.865Z] > authorizing via signed-in user
+[debug] [2018-10-20T17:28:22.866Z] [iam] checking project test-firebase-android-eed88 for permissions ["firebase.projects.get","firebaseauth.users.create","firebaseauth.users.update"]
+[debug] [2018-10-20T17:28:22.868Z] >>> HTTP REQUEST POST https://cloudresourcemanager.googleapis.com/v1/projects/test-firebase-android-eed88:testIamPermissions  
+
+[debug] [2018-10-20T17:28:24.430Z] <<< HTTP RESPONSE 200
+[info] Processing accounts.json (146 bytes)
+[debug] [2018-10-20T17:28:24.438Z] Preparing to import 1 user records in 1 batches.
+[info] Starting importing 1 account(s).
+[debug] [2018-10-20T17:28:24.439Z] >>> HTTP REQUEST POST https://www.googleapis.com/identitytoolkit/v3/relyingparty/uploadAccount  
+
+[debug] [2018-10-20T17:28:25.528Z] <<< HTTP RESPONSE 200
