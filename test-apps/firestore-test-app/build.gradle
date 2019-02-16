@@ -17,7 +17,7 @@
 apply plugin: 'com.android.application'
 
 android {
-    testBuildType = project.testBuildType
+    testBuildType = project.getProperties().get("testBuildType", "debug")
     compileSdkVersion 28
 
     defaultConfig {
@@ -44,20 +44,22 @@ android {
 }
 
 configurations.all {
-  resolutionStrategy.force 'com.android.support:support-annotations:27.1.1'
+    resolutionStrategy.force 'com.android.support:support-annotations:27.1.1'
 }
 
 dependencies {
     // We intentionally use an open ended version to pick up any SNAPSHOT
     // versions published to the root project' s build/ directory.
-    implementation 'com.google.firebase:firebase-firestore:17+'
+
+    implementation 'com.google.firebase:firebase-firestore:17.1.2-SNAPSHOT'
+//    implementation project(':firebase-firestore')
+
     implementation 'com.google.firebase:firebase-core:16+'
     implementation 'com.google.firebase:firebase-auth:16+'
     implementation 'com.android.support.test.espresso:espresso-idling-resource:3.0.2'
     implementation 'com.squareup.okhttp3:okhttp:3.11.0'
     implementation 'com.android.support:appcompat-v7:28.0.0'
     implementation 'com.android.support:support-v4:28.0.0'
-
 
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
     androidTestImplementation 'com.android.support.test:rules:1.0.2'

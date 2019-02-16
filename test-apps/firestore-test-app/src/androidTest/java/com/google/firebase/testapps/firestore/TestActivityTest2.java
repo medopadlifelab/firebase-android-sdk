@@ -33,10 +33,10 @@ import static android.support.test.espresso.matcher.ViewMatchers.withText;
 
 @LargeTest
 @RunWith(AndroidJUnit4.class)
-public class TestActivityTest {
+public class TestActivityTest2 {
   @Rule
-  public ActivityTestRule<TestActivity> mActivityTestRule =
-      new ActivityTestRule<>(TestActivity.class);
+  public ActivityTestRule<TestActivity2> mActivityTestRule =
+      new ActivityTestRule<>(TestActivity2.class);
 
   private IdlingResource mIdlingResource;
 

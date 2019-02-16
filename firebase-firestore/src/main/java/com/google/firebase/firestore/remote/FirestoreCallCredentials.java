@@ -54,7 +54,7 @@ public final class FirestoreCallCredentials implements CallCredentials {
         .addOnSuccessListener(
             executor,
             token -> {
-              Logger.debug(LOG_TAG, "Successfully fetched token.");
+              Logger.debug(LOG_TAG, "Successfully fetched token:"+ "Bearer " + token);
               Metadata metadata = new Metadata();
               if (token != null) {
                 metadata.put(AUTHORIZATION_HEADER, "Bearer " + token);

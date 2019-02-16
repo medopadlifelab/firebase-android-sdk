@@ -23,8 +23,13 @@ public class EmptyCredentialsProvider extends CredentialsProvider {
 
   @Override
   public Task<String> getToken() {
-    TaskCompletionSource<String> source = new TaskCompletionSource<>();
+      System.out.println("getToken: EmptyCredentialsProvider");
+
+      TaskCompletionSource<String> source = new TaskCompletionSource<>();
     source.setResult(null);
+
+    System.out.println("AccessToken: "+ null);
+
     return source.getTask();
   }
 

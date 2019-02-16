@@ -78,6 +78,8 @@ public final class FirebaseAuthCredentialsProvider extends CredentialsProvider {
 
   @Override
   public synchronized Task<String> getToken() {
+    System.out.println("getToken: FirebaseAuthCredentialsProvider");
+
     boolean doForceRefresh = forceRefresh;
     forceRefresh = false;
     Task<GetTokenResult> res = authProvider.getAccessToken(doForceRefresh);
@@ -97,7 +99,10 @@ public final class FirebaseAuthCredentialsProvider extends CredentialsProvider {
             if (!task.isSuccessful()) {
               throw task.getException();
             } else {
-              return task.getResult().getToken();
+
+              String token = task.getResult().getToken();
+              System.out.println("AccessToken: "+ token);
+              return token;
             }
           }
         });

@@ -25,3 +25,5 @@ discoverSubprojects(file('subprojects.cfg')).each {
 renameBuildScripts(rootProject)
 
 apply from: new File(settingsDir, 'gradle/buildCache.gradle')
+include ':firestore-test-app'
+project(':firestore-test-app').projectDir = new File('test-apps/firestore-test-app')

@@ -18,6 +18,7 @@ import static com.google.firebase.firestore.util.Assert.hardAssert;
 
 import android.content.Context;
 import android.support.annotation.Nullable;
+
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.android.gms.tasks.Tasks;
@@ -47,7 +48,9 @@ import com.google.firebase.firestore.remote.RemoteSerializer;
 import com.google.firebase.firestore.remote.RemoteStore;
 import com.google.firebase.firestore.util.AsyncQueue;
 import com.google.firebase.firestore.util.Logger;
+
 import io.grpc.Status;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -59,199 +62,209 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class FirestoreClient implements RemoteStore.RemoteStoreCallback {
 
-  private static final String LOG_TAG = "FirestoreClient";
+    private static final String LOG_TAG = "FirestoreClient";
 
-  private final DatabaseInfo databaseInfo;
-  private final CredentialsProvider credentialsProvider;
-  private final AsyncQueue asyncQueue;
+    private final DatabaseInfo databaseInfo;
+    private final CredentialsProvider credentialsProvider;
+    private final AsyncQueue asyncQueue;
 
-  private Persistence persistence;
-  private LocalStore localStore;
-  private RemoteStore remoteStore;
-  private SyncEngine syncEngine;
-  private EventManager eventManager;
+    private Persistence persistence;
+    private LocalStore localStore;
+    private RemoteStore remoteStore;
+    private SyncEngine syncEngine;
+    private EventManager eventManager;
 
-  public FirestoreClient(
-      final Context context,
-      DatabaseInfo databaseInfo,
-      final boolean usePersistence,
-      CredentialsProvider credentialsProvider,
-      final AsyncQueue asyncQueue) {
-    this.databaseInfo = databaseInfo;
-    this.credentialsProvider = credentialsProvider;
-    this.asyncQueue = asyncQueue;
+    public FirestoreClient(
+            final Context context,
+            DatabaseInfo databaseInfo,
+            final boolean usePersistence,
+            CredentialsProvider credentialsProvider,
+            final AsyncQueue asyncQueue) {
+        this.databaseInfo = databaseInfo;
+        this.credentialsProvider = credentialsProvider;
+        this.asyncQueue = asyncQueue;
 
-    TaskCompletionSource<User> firstUser = new TaskCompletionSource<>();
-    final AtomicBoolean initialized = new AtomicBoolean(false);
-    credentialsProvider.setChangeListener(
-        (User user) -> {
-          if (initialized.compareAndSet(false, true)) {
-            hardAssert(!firstUser.getTask().isComplete(), "Already fulfilled first user task");
-            firstUser.setResult(user);
-          } else {
-            asyncQueue.enqueueAndForget(
-                () -> {
-                  Logger.debug(LOG_TAG, "Credential changed. Current user: %s", user.getUid());
-                  syncEngine.handleCredentialChange(user);
+        TaskCompletionSource<User> firstUser = new TaskCompletionSource<>();
+        final AtomicBoolean initialized = new AtomicBoolean(false);
+        credentialsProvider.setChangeListener(
+                (User user) -> {
+                    if (initialized.compareAndSet(false, true)) {
+                        hardAssert(!firstUser.getTask().isComplete(), "Already fulfilled first user task");
+                        firstUser.setResult(user);
+                    } else {
+                        asyncQueue.enqueueAndForget(
+                                () -> {
+                                    Logger.debug(LOG_TAG, "Credential changed. Current user: %s", user.getUid());
+                                    syncEngine.handleCredentialChange(user);
+                                });
+                    }
                 });
-          }
-        });
 
-    // Defer initialization until we get the current user from the changeListener. This is
-    // guaranteed to be synchronously dispatched onto our worker queue, so we will be initialized
-    // before any subsequently queued work runs.
-    asyncQueue.enqueueAndForget(
-        () -> {
-          try {
-            // Block on initial user being available
-            User initialUser = Tasks.await(firstUser.getTask());
-            initialize(context, initialUser, usePersistence);
-          } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException(e);
-          }
-        });
-  }
-
-  public Task<Void> disableNetwork() {
-    return asyncQueue.enqueue(() -> remoteStore.disableNetwork());
-  }
-
-  public Task<Void> enableNetwork() {
-    return asyncQueue.enqueue(() -> remoteStore.enableNetwork());
-  }
-
-  /** Shuts down this client, cancels all writes / listeners, and releases all resources. */
-  public Task<Void> shutdown() {
-    credentialsProvider.removeChangeListener();
-    return asyncQueue.enqueue(
-        () -> {
-          remoteStore.shutdown();
-          persistence.shutdown();
-        });
-  }
-
-  /** Starts listening to a query. */
-  public QueryListener listen(
-      Query query, ListenOptions options, EventListener<ViewSnapshot> listener) {
-    QueryListener queryListener = new QueryListener(query, options, listener);
-    asyncQueue.enqueueAndForget(() -> eventManager.addQueryListener(queryListener));
-    return queryListener;
-  }
-
-  /** Stops listening to a query previously listened to. */
-  public void stopListening(QueryListener listener) {
-    asyncQueue.enqueueAndForget(() -> eventManager.removeQueryListener(listener));
-  }
-
-  public Task<Document> getDocumentFromLocalCache(DocumentKey docKey) {
-    return asyncQueue
-        .enqueue(() -> localStore.readDocument(docKey))
-        .continueWith(
-            (result) -> {
-              @Nullable MaybeDocument maybeDoc = result.getResult();
-
-              if (maybeDoc instanceof Document) {
-                return (Document) maybeDoc;
-              } else if (maybeDoc instanceof NoDocument) {
-                return null;
-              } else {
-                throw new FirebaseFirestoreException(
-                    "Failed to get document from cache. (However, this document may exist on the "
-                        + "server. Run again without setting source to CACHE to attempt "
-                        + "to retrieve the document from the server.)",
-                    Code.UNAVAILABLE);
-              }
-            });
-  }
-
-  public Task<ViewSnapshot> getDocumentsFromLocalCache(Query query) {
-    return asyncQueue.enqueue(
-        () -> {
-          ImmutableSortedMap<DocumentKey, Document> docs = localStore.executeQuery(query);
-
-          View view =
-              new View(
-                  query,
-                  new ImmutableSortedSet<DocumentKey>(
-                      Collections.emptyList(), DocumentKey::compareTo));
-          View.DocumentChanges viewDocChanges = view.computeDocChanges(docs);
-          return view.applyChanges(viewDocChanges).getSnapshot();
-        });
-  }
-
-  /** Writes mutations. The returned task will be notified when it's written to the backend. */
-  public Task<Void> write(final List<Mutation> mutations) {
-    final TaskCompletionSource<Void> source = new TaskCompletionSource<>();
-    asyncQueue.enqueueAndForget(() -> syncEngine.writeMutations(mutations, source));
-    return source.getTask();
-  }
-
-  /** Tries to execute the transaction in updateFunction up to retries times. */
-  public <TResult> Task<TResult> transaction(
-      Function<Transaction, Task<TResult>> updateFunction, int retries) {
-    return AsyncQueue.callTask(
-        asyncQueue.getExecutor(),
-        () -> syncEngine.transaction(asyncQueue, updateFunction, retries));
-  }
-
-  private void initialize(Context context, User user, boolean usePersistence) {
-    // Note: The initialization work must all be synchronous (we can't dispatch more work) since
-    // external write/listen operations could get queued to run before that subsequent work
-    // completes.
-    Logger.debug(LOG_TAG, "Initializing. user=%s", user.getUid());
-
-    if (usePersistence) {
-      LocalSerializer serializer =
-          new LocalSerializer(new RemoteSerializer(databaseInfo.getDatabaseId()));
-      persistence =
-          new SQLitePersistence(
-              context, databaseInfo.getPersistenceKey(), databaseInfo.getDatabaseId(), serializer);
-    } else {
-      persistence = MemoryPersistence.createEagerGcMemoryPersistence();
+        // Defer initialization until we get the current user from the changeListener. This is
+        // guaranteed to be synchronously dispatched onto our worker queue, so we will be initialized
+        // before any subsequently queued work runs.
+        asyncQueue.enqueueAndForget(
+                () -> {
+                    try {
+                        // Block on initial user being available
+                        User initialUser = Tasks.await(firstUser.getTask());
+                        initialize(context, initialUser, usePersistence);
+                    } catch (InterruptedException | ExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
     }
 
-    persistence.start();
-    localStore = new LocalStore(persistence, user);
+    public Task<Void> disableNetwork() {
+        return asyncQueue.enqueue(() -> remoteStore.disableNetwork());
+    }
 
-    Datastore datastore = new Datastore(databaseInfo, asyncQueue, credentialsProvider);
-    remoteStore = new RemoteStore(this, localStore, datastore, asyncQueue);
+    public Task<Void> enableNetwork() {
+        return asyncQueue.enqueue(() -> remoteStore.enableNetwork());
+    }
 
-    syncEngine = new SyncEngine(localStore, remoteStore, user);
-    eventManager = new EventManager(syncEngine);
+    /**
+     * Shuts down this client, cancels all writes / listeners, and releases all resources.
+     */
+    public Task<Void> shutdown() {
+        credentialsProvider.removeChangeListener();
+        return asyncQueue.enqueue(
+                () -> {
+                    remoteStore.shutdown();
+                    persistence.shutdown();
+                });
+    }
 
-    // NOTE: RemoteStore depends on LocalStore (for persisting stream tokens, refilling mutation
-    // queue, etc.) so must be started after LocalStore.
-    localStore.start();
-    remoteStore.start();
-  }
+    /**
+     * Starts listening to a query.
+     */
+    public QueryListener listen(
+            Query query, ListenOptions options, EventListener<ViewSnapshot> listener) {
+        QueryListener queryListener = new QueryListener(query, options, listener);
+        asyncQueue.enqueueAndForget(() -> eventManager.addQueryListener(queryListener));
+        return queryListener;
+    }
 
-  @Override
-  public void handleRemoteEvent(RemoteEvent remoteEvent) {
-    syncEngine.handleRemoteEvent(remoteEvent);
-  }
+    /**
+     * Stops listening to a query previously listened to.
+     */
+    public void stopListening(QueryListener listener) {
+        asyncQueue.enqueueAndForget(() -> eventManager.removeQueryListener(listener));
+    }
 
-  @Override
-  public void handleRejectedListen(int targetId, Status error) {
-    syncEngine.handleRejectedListen(targetId, error);
-  }
+    public Task<Document> getDocumentFromLocalCache(DocumentKey docKey) {
+        return asyncQueue
+                .enqueue(() -> localStore.readDocument(docKey))
+                .continueWith(
+                        (result) -> {
+                            @Nullable MaybeDocument maybeDoc = result.getResult();
 
-  @Override
-  public void handleSuccessfulWrite(MutationBatchResult mutationBatchResult) {
-    syncEngine.handleSuccessfulWrite(mutationBatchResult);
-  }
+                            if (maybeDoc instanceof Document) {
+                                return (Document) maybeDoc;
+                            } else if (maybeDoc instanceof NoDocument) {
+                                return null;
+                            } else {
+                                throw new FirebaseFirestoreException(
+                                        "Failed to get document from cache. (However, this document may exist on the "
+                                                + "server. Run again without setting source to CACHE to attempt "
+                                                + "to retrieve the document from the server.)",
+                                        Code.UNAVAILABLE);
+                            }
+                        });
+    }
 
-  @Override
-  public void handleRejectedWrite(int batchId, Status error) {
-    syncEngine.handleRejectedWrite(batchId, error);
-  }
+    public Task<ViewSnapshot> getDocumentsFromLocalCache(Query query) {
+        return asyncQueue.enqueue(
+                () -> {
+                    ImmutableSortedMap<DocumentKey, Document> docs = localStore.executeQuery(query);
 
-  @Override
-  public void handleOnlineStateChange(OnlineState onlineState) {
-    syncEngine.handleOnlineStateChange(onlineState);
-  }
+                    View view =
+                            new View(
+                                    query,
+                                    new ImmutableSortedSet<DocumentKey>(
+                                            Collections.emptyList(), DocumentKey::compareTo));
+                    View.DocumentChanges viewDocChanges = view.computeDocChanges(docs);
+                    return view.applyChanges(viewDocChanges).getSnapshot();
+                });
+    }
 
-  @Override
-  public ImmutableSortedSet<DocumentKey> getRemoteKeysForTarget(int targetId) {
-    return syncEngine.getRemoteKeysForTarget(targetId);
-  }
+    /**
+     * Writes mutations. The returned task will be notified when it's written to the backend.
+     */
+    public Task<Void> write(final List<Mutation> mutations) {
+        final TaskCompletionSource<Void> source = new TaskCompletionSource<>();
+        asyncQueue.enqueueAndForget(() -> syncEngine.writeMutations(mutations, source));
+        return source.getTask();
+    }
+
+    /**
+     * Tries to execute the transaction in updateFunction up to retries times.
+     */
+    public <TResult> Task<TResult> transaction(
+            Function<Transaction, Task<TResult>> updateFunction, int retries) {
+        return AsyncQueue.callTask(
+                asyncQueue.getExecutor(),
+                () -> syncEngine.transaction(asyncQueue, updateFunction, retries));
+    }
+
+    private void initialize(Context context, User user, boolean usePersistence) {
+        // Note: The initialization work must all be synchronous (we can't dispatch more work) since
+        // external write/listen operations could get queued to run before that subsequent work
+        // completes.
+        Logger.debug(LOG_TAG, "Initializing. user=%s", user.getUid());
+
+        if (usePersistence) {
+            LocalSerializer serializer =
+                    new LocalSerializer(new RemoteSerializer(databaseInfo.getDatabaseId()));
+            persistence =
+                    new SQLitePersistence(
+                            context, databaseInfo.getPersistenceKey(), databaseInfo.getDatabaseId(), serializer);
+        } else {
+            persistence = MemoryPersistence.createEagerGcMemoryPersistence();
+        }
+
+        persistence.start();
+        localStore = new LocalStore(persistence, user);
+
+        Datastore datastore = new Datastore(databaseInfo, asyncQueue, credentialsProvider);
+        remoteStore = new RemoteStore(this, localStore, datastore, asyncQueue);
+
+        syncEngine = new SyncEngine(localStore, remoteStore, user);
+        eventManager = new EventManager(syncEngine);
+
+        // NOTE: RemoteStore depends on LocalStore (for persisting stream tokens, refilling mutation
+        // queue, etc.) so must be started after LocalStore.
+        localStore.start();
+        remoteStore.start();
+    }
+
+    @Override
+    public void handleRemoteEvent(RemoteEvent remoteEvent) {
+        syncEngine.handleRemoteEvent(remoteEvent);
+    }
+
+    @Override
+    public void handleRejectedListen(int targetId, Status error) {
+        syncEngine.handleRejectedListen(targetId, error);
+    }
+
+    @Override
+    public void handleSuccessfulWrite(MutationBatchResult mutationBatchResult) {
+        syncEngine.handleSuccessfulWrite(mutationBatchResult);
+    }
+
+    @Override
+    public void handleRejectedWrite(int batchId, Status error) {
+        syncEngine.handleRejectedWrite(batchId, error);
+    }
+
+    @Override
+    public void handleOnlineStateChange(OnlineState onlineState) {
+        syncEngine.handleOnlineStateChange(onlineState);
+    }
+
+    @Override
+    public ImmutableSortedSet<DocumentKey> getRemoteKeysForTarget(int targetId) {
+        return syncEngine.getRemoteKeysForTarget(targetId);
+    }
 }
