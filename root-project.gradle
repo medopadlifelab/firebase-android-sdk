@@ -13,10 +13,9 @@
 // limitations under the License.
 
 import com.google.firebase.gradle.plugins.license.LicenseResolverPlugin
-import groovy.io.FileType
 
 buildscript {
-
+    ext.kotlinVersion = '1.3.20'
     repositories {
         mavenLocal()
         google()
@@ -36,17 +35,31 @@ buildscript {
         classpath 'com.google.gms:google-services:4.1.0'
         classpath 'me.tatarka:gradle-retrolambda:3.7.0'
         classpath 'digital.wup:android-maven-publish:3.6.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
     }
 }
+
+apply from: 'sdkProperties.gradle'
 
 ext {
     playServicesVersion = '16.0.1'
     supportAnnotationsVersion = '28.0.0'
     errorproneVersion = '2.3.2'
     errorproneJavacVersion = '9+181-r4173-1'
+    googleTruthVersion = '0.40'
+    robolectricVersion = '4.1'
 }
 
 apply plugin: com.google.firebase.gradle.plugins.publish.PublishingPlugin
+apply plugin: com.google.firebase.gradle.plugins.ci.ContinuousIntegrationPlugin
+apply plugin: com.google.firebase.gradle.plugins.ci.metrics.MetricsPlugin
+
+firebaseContinuousIntegration {
+    ignorePaths = [
+            /.*\.gitignore$/,
+            /.*.md$/,
+    ]
+}
 
 configure(subprojects) {
     repositories {
@@ -147,47 +160,11 @@ configure(subprojects) {
             sub.android { buildTypes { release { consumerProguardFiles 'proguard.txt' } } }
         }
 
-//        sub.apply plugin: LicenseResolverPlugin
-//        sub.thirdPartyLicenses {
-//            def root = "file://$rootDir/third_party/licenses"
-//
-//            add 'CCTZ', "$root/apache-2.0.txt"
-//            add 'ICU4C', "$root/icu.txt"
-//            add 'JSR 305', "$root/jsr305.txt"
-//            add 'PCRE', "$root/pcre.txt"
-//            add 'Protobuf Nano', "$root/nanoproto.txt"
-//            add 'RE2', "$root/re2.txt"
-//            add 'STL', "$root/sgi-stl.txt"
-//            add 'UTF', "$root/utf.txt"
-//            add 'darts_clone', "$root/darts_clone.txt"
-//            add 'flatbuffers', "$root/apache-2.0.txt"
-//            add 'safeparcel', "$root/apache-2.0.txt"
-//            add 'zlib', "$root/zlib.txt"
-//        }
+        sub.apply plugin: LicenseResolverPlugin
     }
 }
 
 
 task clean(type: Delete) {
     delete rootProject.buildDir
-}
-
-task copyrightCheck {
-    doLast {
-        def nonConformingFiles = []
-        projectDir.traverse(type: FileType.FILES,
-                nameFilter: ~/.+\.(java|groovy|sh|proto|gradle|py)$/,
-                excludeFilter: ~/(^\.git|.*\/build\/.*)/) { File currentFile ->
-
-            if (!currentFile.any { it.matches(/.*Copyright [0-9]{4} Google LLC/) }) {
-                nonConformingFiles.add(currentFile.path - projectDir.path - '/')
-            }
-
-        }
-
-        if (nonConformingFiles) {
-            throw new GradleException(
-                    "Add copyright and license header to the following files:\n${nonConformingFiles.join('\n')}.")
-        }
-    }
 }

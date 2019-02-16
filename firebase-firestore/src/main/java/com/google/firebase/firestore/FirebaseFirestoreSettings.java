@@ -24,8 +24,20 @@ import com.google.firebase.annotations.PublicApi;
 /** Settings used to configure a FirebaseFirestore instance. */
 @PublicApi
 public final class FirebaseFirestoreSettings {
+  /**
+   * Constant to use with {@link FirebaseFirestoreSettings.Builder#setCacheSizeBytes(long)} to
+   * disable garbage collection.
+   */
+  @PublicApi public static final long CACHE_SIZE_UNLIMITED = -1;
+
+  private static final long MINIMUM_CACHE_BYTES = 1 * 1024 * 1024; // 1 MB
+  // TODO(b/121269744): Set this to be the default value after SDK is past version 1.0
+  // private static final long DEFAULT_CACHE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+  // For now, we are rolling this out with collection disabled. Once the SDK has hit version 1.0,
+  // we will switch the default to the above value, 100 MB.
+  private static final long DEFAULT_CACHE_SIZE_BYTES = CACHE_SIZE_UNLIMITED;
   private static final String DEFAULT_HOST = "firestore.googleapis.com";
-  private static final boolean DEFAULT_TIMESTAMPS_IN_SNAPSHOTS_ENABLED = false;
+  private static final boolean DEFAULT_TIMESTAMPS_IN_SNAPSHOTS_ENABLED = true;
 
   /** A Builder for creating {@link FirebaseFirestoreSettings}. */
   @PublicApi
@@ -34,6 +46,7 @@ public final class FirebaseFirestoreSettings {
     private boolean sslEnabled;
     private boolean persistenceEnabled;
     private boolean timestampsInSnapshotsEnabled;
+    private long cacheSizeBytes;
 
     /** Constructs a new FirebaseFirestoreSettings Builder object. */
     @PublicApi
@@ -42,6 +55,7 @@ public final class FirebaseFirestoreSettings {
       sslEnabled = true;
       persistenceEnabled = true;
       timestampsInSnapshotsEnabled = DEFAULT_TIMESTAMPS_IN_SNAPSHOTS_ENABLED;
+      cacheSizeBytes = DEFAULT_CACHE_SIZE_BYTES;
     }
 
     /**
@@ -96,31 +110,54 @@ public final class FirebaseFirestoreSettings {
     }
 
     /**
-     * Enables the use of {@link com.google.firebase.Timestamp Timestamps} for timestamp fields in
-     * {@link DocumentSnapshot DocumentSnapshots}.
+     * Specifies whether to use {@link com.google.firebase.Timestamp Timestamps} for timestamp
+     * fields in {@link DocumentSnapshot DocumentSnapshots}. This is now enabled by default and
+     * should not be disabled.
      *
-     * <p>Currently, Firestore returns timestamp fields as {@link java.util.Date} but {@link
-     * java.util.Date Date} only supports millisecond precision, which leads to truncation and
-     * causes unexpected behavior when using a timestamp from a snapshot as a part of a subsequent
-     * query.
+     * <p>Previously, Firestore returned timestamp fields as {@link java.util.Date} but {@link
+     * java.util.Date} only supports millisecond precision, which leads to truncation and causes
+     * unexpected behavior when using a timestamp from a snapshot as a part of a subsequent query.
      *
-     * <p>Setting {@code setTimestampsInSnapshotsEnabled(true)} will cause Firestore to return
-     * {@link com.google.firebase.Timestamp Timestamp} values instead of {@link java.util.Date
-     * Date}, avoiding this kind of problem. To make this work you must also change any code that
-     * uses {@link java.util.Date Date} to use {@link com.google.firebase.Timestamp Timestamp}
-     * instead.
+     * <p>So now Firestore returns {@link com.google.firebase.Timestamp Timestamp} values instead of
+     * {@link java.util.Date}, avoiding this kind of problem.
      *
-     * <p>NOTE: in the future {@link FirebaseFirestoreSettings#areTimestampsInSnapshotsEnabled} will
-     * default to true and this option will be removed so you should change your code to use
-     * Timestamp now and opt-in to this new behavior as soon as you can.
+     * <p>To opt into the old behavior of returning {@link java.util.Date Dates}, you can
+     * temporarily set {@link FirebaseFirestoreSettings#areTimestampsInSnapshotsEnabled} to false.
      *
-     * @return A settings object on which the return type for timestamp fields is configured as
-     *     specified by the given {@code value}.
+     * @deprecated This setting now defaults to true and will be removed in a future release. If you
+     *     are already setting it to true, just remove the setting. If you are setting it to false,
+     *     you should update your code to expect {@link com.google.firebase.Timestamp Timestamps}
+     *     instead of {@link java.util.Date Dates} and then remove the setting.
      */
     @NonNull
+    @Deprecated
     @PublicApi
     public Builder setTimestampsInSnapshotsEnabled(boolean value) {
       this.timestampsInSnapshotsEnabled = value;
+      return this;
+    }
+
+    /**
+     * Sets an approximate cache size threshold for the on-disk data. If the cache grows beyond this
+     * size, Firestore will start removing data that hasn't been recently used. The size is not a
+     * guarantee that the cache will stay below that size, only that if the cache exceeds the given
+     * size, cleanup will be attempted.
+     *
+     * <p>By default, collection is disabled (the value is set to {@link
+     * FirebaseFirestoreSettings#CACHE_SIZE_UNLIMITED}). In a future release, collection will be
+     * enabled by default, with a default cache size of 100 MB. The minimum value is 1 MB.
+     *
+     * @return A settings object on which the cache size is configured as specified by the given
+     *     {@code value}.
+     */
+    @NonNull
+    @PublicApi
+    public Builder setCacheSizeBytes(long value) {
+      if (value != CACHE_SIZE_UNLIMITED && value < MINIMUM_CACHE_BYTES) {
+        throw new IllegalArgumentException(
+            "Cache size must be set to at least " + MINIMUM_CACHE_BYTES + " bytes");
+      }
+      this.cacheSizeBytes = value;
       return this;
     }
 
@@ -139,6 +176,7 @@ public final class FirebaseFirestoreSettings {
   private final boolean sslEnabled;
   private final boolean persistenceEnabled;
   private final boolean timestampsInSnapshotsEnabled;
+  private final long cacheSizeBytes;
 
   /** Constructs a FirebaseFirestoreSettings object based on the values in the Builder. */
   private FirebaseFirestoreSettings(Builder builder) {
@@ -146,6 +184,7 @@ public final class FirebaseFirestoreSettings {
     sslEnabled = builder.sslEnabled;
     persistenceEnabled = builder.persistenceEnabled;
     timestampsInSnapshotsEnabled = builder.timestampsInSnapshotsEnabled;
+    cacheSizeBytes = builder.cacheSizeBytes;
   }
 
   @Override
@@ -161,7 +200,8 @@ public final class FirebaseFirestoreSettings {
     return host.equals(that.host)
         && sslEnabled == that.sslEnabled
         && persistenceEnabled == that.persistenceEnabled
-        && timestampsInSnapshotsEnabled == that.timestampsInSnapshotsEnabled;
+        && timestampsInSnapshotsEnabled == that.timestampsInSnapshotsEnabled
+        && cacheSizeBytes == that.cacheSizeBytes;
   }
 
   @Override
@@ -170,6 +210,7 @@ public final class FirebaseFirestoreSettings {
     result = 31 * result + (sslEnabled ? 1 : 0);
     result = 31 * result + (persistenceEnabled ? 1 : 0);
     result = 31 * result + (timestampsInSnapshotsEnabled ? 1 : 0);
+    result = 31 * result + (int) cacheSizeBytes;
     return result;
   }
 
@@ -210,5 +251,14 @@ public final class FirebaseFirestoreSettings {
   @PublicApi
   public boolean areTimestampsInSnapshotsEnabled() {
     return timestampsInSnapshotsEnabled;
+  }
+
+  /**
+   * Returns the threshold for the cache size above which the SDK will attempt to collect the least
+   * recently used documents.
+   */
+  @PublicApi
+  public long getCacheSizeBytes() {
+    return cacheSizeBytes;
   }
 }

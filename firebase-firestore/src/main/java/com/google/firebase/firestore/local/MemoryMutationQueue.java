@@ -29,6 +29,7 @@ import com.google.firebase.firestore.remote.WriteStream;
 import com.google.firebase.firestore.util.Util;
 import com.google.protobuf.ByteString;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import javax.annotation.Nullable;
@@ -60,9 +61,6 @@ final class MemoryMutationQueue implements MutationQueue {
   /** The next value to use when assigning sequential IDs to each mutation batch. */
   private int nextBatchId;
 
-  /** The highest acknowledged mutation in the queue. */
-  private int highestAcknowledgedBatchId;
-
   /**
    * The last received stream token from the server, used to acknowledge which responses the client
    * has processed. Stream tokens are opaque checkpoint markers whose only real value is their
@@ -78,7 +76,6 @@ final class MemoryMutationQueue implements MutationQueue {
 
     batchesByDocumentKey = new ImmutableSortedSet<>(emptyList(), DocumentReference.BY_KEY);
     nextBatchId = 1;
-    highestAcknowledgedBatchId = MutationBatch.UNKNOWN;
     lastStreamToken = WriteStream.EMPTY_STREAM_TOKEN;
   }
 
@@ -89,14 +86,10 @@ final class MemoryMutationQueue implements MutationQueue {
     // Note: The queue may be shutdown / started multiple times, since we maintain the queue for the
     // duration of the app session in case a user logs out / back in. To behave like the
     // SQLite-backed MutationQueue (and accommodate tests that expect as much), we reset nextBatchId
-    // and highestAcknowledgedBatchId if the queue is empty.
+    // if the queue is empty.
     if (isEmpty()) {
       nextBatchId = 1;
-      highestAcknowledgedBatchId = MutationBatch.UNKNOWN;
     }
-    hardAssert(
-        highestAcknowledgedBatchId < nextBatchId,
-        "highestAcknowledgedBatchId must be less than the nextBatchId");
   }
 
   @Override
@@ -109,10 +102,8 @@ final class MemoryMutationQueue implements MutationQueue {
   @Override
   public void acknowledgeBatch(MutationBatch batch, ByteString streamToken) {
     int batchId = batch.getBatchId();
-    hardAssert(
-        batchId > highestAcknowledgedBatchId, "Mutation batchIds must be acknowledged in order");
-
     int batchIndex = indexOfExistingBatchId(batchId, "acknowledged");
+    hardAssert(batchIndex == 0, "Can only acknowledge the first batch in the mutation queue");
 
     // Verify that the batch in the queue is the one to be acknowledged.
     MutationBatch check = queue.get(batchIndex);
@@ -121,9 +112,7 @@ final class MemoryMutationQueue implements MutationQueue {
         "Queue ordering failure: expected batch %d, got batch %d",
         batchId,
         check.getBatchId());
-    hardAssert(!check.isTombstone(), "Can't acknowledge a previously removed batch");
 
-    highestAcknowledgedBatchId = batchId;
     lastStreamToken = checkNotNull(streamToken);
   }
 
@@ -173,37 +162,23 @@ final class MemoryMutationQueue implements MutationQueue {
 
     MutationBatch batch = queue.get(index);
     hardAssert(batch.getBatchId() == batchId, "If found batch must match");
-    return batch.isTombstone() ? null : batch;
+    return batch;
   }
 
   @Nullable
   @Override
   public MutationBatch getNextMutationBatchAfterBatchId(int batchId) {
-    int size = queue.size();
-
-    // All batches with batchId <= highestAcknowledgedBatchId have been acknowledged so the
-    // first unacknowledged batch after batchId will have a batchId larger than both of these
-    // values.
-    int nextBatchId = Math.max(batchId, highestAcknowledgedBatchId) + 1;
+    int nextBatchId = batchId + 1;
 
     // The requested batchId may still be out of range so normalize it to the start of the queue.
     int rawIndex = indexOfBatchId(nextBatchId);
     int index = rawIndex < 0 ? 0 : rawIndex;
-
-    // Finally return the first non-tombstone batch.
-    for (; index < size; index++) {
-      MutationBatch batch = queue.get(index);
-      if (!batch.isTombstone()) {
-        return batch;
-      }
-    }
-
-    return null;
+    return queue.size() > index ? queue.get(index) : null;
   }
 
   @Override
   public List<MutationBatch> getAllMutationBatches() {
-    return getAllLiveMutationBatchesBeforeIndex(queue.size());
+    return Collections.unmodifiableList(queue);
   }
 
   @Override
@@ -305,27 +280,9 @@ final class MemoryMutationQueue implements MutationQueue {
     // Find the position of the first batch for removal. This need not be the first entry in the
     // queue.
     int batchIndex = indexOfExistingBatchId(batch.getBatchId(), "removed");
-    hardAssert(
-        queue.get(batchIndex).getBatchId() == batch.getBatchId(),
-        "Removed batches must exist in the queue");
+    hardAssert(batchIndex == 0, "Can only remove the first entry of the mutation queue");
 
-    // Only actually remove batches if removing at the front of the queue. Previously rejected
-    // batches may have left tombstones in the queue, so expand the removal range to include any
-    // tombstones.
-    if (batchIndex == 0) {
-      int endIndex = 1;
-      for (; endIndex < queue.size(); endIndex++) {
-        MutationBatch currentBatch = queue.get(endIndex);
-        if (!currentBatch.isTombstone()) {
-          break;
-        }
-      }
-
-      queue.subList(batchIndex, endIndex).clear();
-
-    } else {
-      queue.set(batchIndex, queue.get(batchIndex).toTombstone());
-    }
+    queue.remove(0);
 
     // Remove entries from the index too.
     ImmutableSortedSet<DocumentReference> references = batchesByDocumentKey;
@@ -365,24 +322,6 @@ final class MemoryMutationQueue implements MutationQueue {
   // Helpers
 
   /**
-   * A private helper that collects all the mutation batches in the queue up to but not including
-   * the given endIndex. All tombstones in the queue are excluded.
-   */
-  private List<MutationBatch> getAllLiveMutationBatchesBeforeIndex(int endIndex) {
-    List<MutationBatch> result = new ArrayList<>(endIndex);
-
-    for (int i = 0; i < endIndex; i++) {
-      MutationBatch batch = queue.get(i);
-
-      if (!batch.isTombstone()) {
-        result.add(batch);
-      }
-    }
-
-    return result;
-  }
-
-  /**
    * Finds the index of the given batchId in the mutation queue. This operation is O(1).
    *
    * @return The computed index of the batch with the given batchId, based on the state of the
@@ -416,5 +355,13 @@ final class MemoryMutationQueue implements MutationQueue {
     int index = indexOfBatchId(batchId);
     hardAssert(index >= 0 && index < queue.size(), "Batches must exist to be %s", action);
     return index;
+  }
+
+  long getByteSize(LocalSerializer serializer) {
+    long count = 0;
+    for (MutationBatch batch : queue) {
+      count += serializer.encodeMutationBatch(batch).getSerializedSize();
+    }
+    return count;
   }
 }

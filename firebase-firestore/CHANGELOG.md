@@ -1,10 +1,45 @@
 # Unreleased
-- [feature] Custom objects (POJOs) can now be passed as a field value in
-  update(), within `Map<>` objects passed to set(), in array transform
-  operations, and in query filters.
-- [feature] DocumentSnapshot.get() now supports retrieving fields as
-  custom objects (POJOs) by passing a Class<T> instance, e.g.
+- [fixed] Fixed calculation of SQLite database size on Android 9 Pie devices.
+  Previous method could be off by a few MBs on these devices, potentially
+  delaying garbage collection.
+
+# 18.0.1
+- [fixed] Fixed an issue where Firestore would crash if handling write batches
+  larger than 2 MB in size (#208).
+- [changed] Firestore now recovers more quickly from long periods without
+  network access (#217).
+
+# 18.0.0
+- [changed] The `timestampsInSnapshotsEnabled` setting is now enabled by
+  default. Timestamp fields that read from a `DocumentSnapshot` are now
+  returned as `Timestamp` objects instead of `Date` objects. This is a breaking
+  change; developers must update any code that expects to receive a `Date`
+  object. See https://firebase.google.com/docs/reference/android/com/google/firebase/firestore/FirebaseFirestoreSettings.Builder.html#setTimestampsInSnapshotsEnabled(boolean) for more details.
+- [feature] Custom objects (POJOs) can now be passed in several ways: as a
+  field value in `update()`, within `Map<>` objects passed to `set()`, in array
+  transform operations, and in query filters.
+- [feature] `DocumentSnapshot.get()` now supports retrieving fields as
+  custom objects (POJOs) by passing a `Class<T>` instance, e.g.,
   `snapshot.get("field", CustomType.class)`.
+- [fixed] Fixed an issue where if an app sent a write to the server, but the
+  app was shut down before a listener received the write, the app could crash.
+
+# 17.1.5
+- [changed] Firestore now recovers more quickly from bad network states.
+- [changed] Improved performance for reading large collections.
+- [fixed] Offline persistence now properly records schema downgrades. This is a
+  forward-looking change that allows you to safely downgrade from future SDK
+  versions to this version (v17.1.5). You can already safely downgrade versions
+  now depending on the source version. For example, you can safely downgrade
+  from v17.1.4 to v17.1.2 because there are no schema changes between those
+  versions. (#134)
+
+# 17.1.4
+- [fixed] Fixed a SQLite transaction handling issue that occasionally masked
+  exceptions when Firestore closed a transaction that was never started. For
+  more information, see the issue report in GitHub (https://github.com/firebase/firebase-android-sdk/issues/115).
+- [fixed] Fixed a race condition that caused a `SQLiteDatabaseLockedException`
+  when an app attempted to access the SQLite database from multiple threads.
 
 # 17.1.2
 - [changed] Changed how the SDK handles locally-updated documents while syncing

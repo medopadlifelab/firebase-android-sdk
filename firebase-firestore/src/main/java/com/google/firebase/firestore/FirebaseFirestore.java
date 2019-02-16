@@ -52,6 +52,8 @@ import java.util.concurrent.Executor;
 public class FirebaseFirestore {
   private static final String TAG = "FirebaseFirestore";
   private final Context context;
+  // This is also used as private lock object for this instance. There is nothing inherent about
+  // databaseId itself that needs locking; it just saves us creating a separate lock object.
   private final DatabaseId databaseId;
   private final String persistenceKey;
   private final CredentialsProvider credentialsProvider;
@@ -59,7 +61,7 @@ public class FirebaseFirestore {
   private final FirebaseApp firebaseApp;
 
   private FirebaseFirestoreSettings settings;
-  private FirestoreClient client;
+  private volatile FirestoreClient client;
   private final UserDataConverter dataConverter;
 
   @NonNull
@@ -161,60 +163,34 @@ public class FirebaseFirestore {
    */
   @PublicApi
   public void setFirestoreSettings(@NonNull FirebaseFirestoreSettings settings) {
-    checkNotNull(settings, "Provided settings must not be null.");
-    // As a special exception, don't throw if the same settings are passed repeatedly. This
-    // should make it simpler to get a Firestore instance in an activity.
-    if (client != null && !this.settings.equals(settings)) {
-      throw new IllegalStateException(
-          "FirebaseFirestore has already been started and its settings can no longer be changed. "
-              + "You can only call setFirestoreSettings() before calling any other methods on a "
-              + "FirebaseFirestore object.");
+    synchronized (databaseId) {
+      checkNotNull(settings, "Provided settings must not be null.");
+      // As a special exception, don't throw if the same settings are passed repeatedly. This
+      // should make it simpler to get a Firestore instance in an activity.
+      if (client != null && !this.settings.equals(settings)) {
+        throw new IllegalStateException(
+            "FirebaseFirestore has already been started and its settings can no longer be changed. "
+                + "You can only call setFirestoreSettings() before calling any other methods on a "
+                + "FirebaseFirestore object.");
+      }
+      this.settings = settings;
     }
-    this.settings = settings;
   }
 
   private void ensureClientConfigured() {
-    if (client == null) {
-      if (!settings.areTimestampsInSnapshotsEnabled()) {
-        Logger.warn(
-            "Firestore",
-            "The behavior for java.util.Date objects stored in Firestore is going to change "
-                + "AND YOUR APP MAY BREAK.\n"
-                + "To hide this warning and ensure your app does not break, you need to add "
-                + "the following code to your app before calling any other Cloud Firestore "
-                + "methods:\n"
-                + "\n"
-                + "FirebaseFirestore firestore = FirebaseFirestore.getInstance();\n"
-                + "FirebaseFirestoreSettings settings = new FirebaseFirestoreSettings.Builder()\n"
-                + "    .setTimestampsInSnapshotsEnabled(true)\n"
-                + "    .build();\n"
-                + "firestore.setFirestoreSettings(settings);\n"
-                + "\n"
-                + "With this change, timestamps stored in Cloud Firestore will be read back as "
-                + "com.google.firebase.Timestamp objects instead of as system java.util.Date "
-                + "objects. So you will also need to update code expecting a java.util.Date to "
-                + "instead expect a Timestamp. For example:\n"
-                + "\n"
-                + "// Old:\n"
-                + "java.util.Date date = snapshot.getDate(\"created_at\");\n"
-                + "// New:\n"
-                + "Timestamp timestamp = snapshot.getTimestamp(\"created_at\");\n"
-                + "java.util.Date date = timestamp.toDate();\n"
-                + "\n"
-                + "Please audit all existing usages of java.util.Date when you enable the new "
-                + "behavior. In a future release, the behavior will be changed to the new "
-                + "behavior, so if you do not follow these steps, YOUR APP MAY BREAK.");
+    if (client != null) {
+      return;
+    }
+
+    synchronized (databaseId) {
+      if (client != null) {
+        return;
       }
       DatabaseInfo databaseInfo =
           new DatabaseInfo(databaseId, persistenceKey, settings.getHost(), settings.isSslEnabled());
 
       client =
-          new FirestoreClient(
-              context,
-              databaseInfo,
-              settings.isPersistenceEnabled(),
-              credentialsProvider,
-              asyncQueue);
+          new FirestoreClient(context, databaseInfo, settings, credentialsProvider, asyncQueue);
     }
   }
 

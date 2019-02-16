@@ -14,6 +14,7 @@
 
 package com.google.firebase.firestore.remote;
 
+import android.content.Context;
 import android.support.annotation.VisibleForTesting;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.firestore.FirebaseFirestoreException;
@@ -27,13 +28,14 @@ import com.google.firebase.firestore.model.mutation.MutationResult;
 import com.google.firebase.firestore.util.AsyncQueue;
 import com.google.firebase.firestore.util.FirestoreChannel;
 import com.google.firebase.firestore.util.Supplier;
-import com.google.firestore.v1beta1.BatchGetDocumentsRequest;
-import com.google.firestore.v1beta1.BatchGetDocumentsResponse;
-import com.google.firestore.v1beta1.CommitRequest;
-import com.google.firestore.v1beta1.CommitResponse;
-import com.google.firestore.v1beta1.FirestoreGrpc;
+import com.google.firestore.v1.BatchGetDocumentsRequest;
+import com.google.firestore.v1.BatchGetDocumentsResponse;
+import com.google.firestore.v1.CommitRequest;
+import com.google.firestore.v1.CommitResponse;
+import com.google.firestore.v1.FirestoreGrpc;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Status;
+import io.grpc.android.AndroidChannelBuilder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -41,6 +43,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Datastore represents a proxy for the remote server, hiding details of the RPC layer. It:
@@ -89,7 +92,10 @@ public class Datastore {
   }
 
   public Datastore(
-      DatabaseInfo databaseInfo, AsyncQueue workerQueue, CredentialsProvider credentialsProvider) {
+      DatabaseInfo databaseInfo,
+      AsyncQueue workerQueue,
+      CredentialsProvider credentialsProvider,
+      Context context) {
     this.databaseInfo = databaseInfo;
     this.workerQueue = workerQueue;
     this.serializer = new RemoteSerializer(databaseInfo.getDatabaseId());
@@ -105,13 +111,29 @@ public class Datastore {
       }
     }
 
+    // Ensure gRPC recovers from a dead connection. (Not typically necessary, as the OS will usually
+    // notify gRPC when a connection dies. But not always. This acts as a failsafe.)
+    channelBuilder.keepAliveTime(30, TimeUnit.SECONDS);
+
     // This ensures all callbacks are issued on the worker queue. If this call is removed,
     // all calls need to be audited to make sure they are executed on the right thread.
     channelBuilder.executor(workerQueue.getExecutor());
 
+    // Wrap the ManagedChannelBuilder in an AndroidChannelBuilder. This allows the channel to
+    // respond more gracefully to network change events (such as switching from cell to wifi).
+    AndroidChannelBuilder androidChannelBuilder =
+        AndroidChannelBuilder.fromBuilder(channelBuilder).context(context);
+
     channel =
         new FirestoreChannel(
-            workerQueue, credentialsProvider, channelBuilder.build(), databaseInfo.getDatabaseId());
+            workerQueue,
+            credentialsProvider,
+            androidChannelBuilder.build(),
+            databaseInfo.getDatabaseId());
+  }
+
+  void shutdown() {
+    channel.shutdown();
   }
 
   AsyncQueue getWorkerQueue() {
@@ -157,7 +179,7 @@ public class Datastore {
               int count = response.getWriteResultsCount();
               ArrayList<MutationResult> results = new ArrayList<>(count);
               for (int i = 0; i < count; i++) {
-                com.google.firestore.v1beta1.WriteResult result = response.getWriteResults(i);
+                com.google.firestore.v1.WriteResult result = response.getWriteResults(i);
                 results.add(serializer.decodeMutationResult(result, commitVersion));
               }
               return results;
@@ -197,7 +219,13 @@ public class Datastore {
             });
   }
 
-  public static boolean isPermanentWriteError(Status status) {
+  /**
+   * Determines whether the given status has an error code that represents a permanent error when
+   * received in response to a non-write operation.
+   *
+   * @see #isPermanentWriteError for classifying write errors.
+   */
+  public static boolean isPermanentError(Status status) {
     // See go/firestore-client-errors
     switch (status.getCode()) {
       case OK:
@@ -228,5 +256,20 @@ public class Datastore {
       default:
         throw new IllegalArgumentException("Unknown gRPC status code: " + status.getCode());
     }
+  }
+
+  /**
+   * Determines whether the given status has an error code that represents a permanent error when
+   * received in response to a write operation.
+   *
+   * <p>Write operations must be handled specially because as of b/119437764, ABORTED errors on the
+   * write stream should be retried too (even though ABORTED errors are not generally retryable).
+   *
+   * <p>Note that during the initial handshake on the write stream an ABORTED error signals that we
+   * should discard our stream token (i.e. it is permanent). This means a handshake error should be
+   * classified with isPermanentError, above.
+   */
+  public static boolean isPermanentWriteError(Status status) {
+    return isPermanentError(status) && !status.getCode().equals(Status.Code.ABORTED);
   }
 }

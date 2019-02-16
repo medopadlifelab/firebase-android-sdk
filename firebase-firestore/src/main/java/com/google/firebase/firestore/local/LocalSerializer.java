@@ -48,13 +48,19 @@ public final class LocalSerializer {
   com.google.firebase.firestore.proto.MaybeDocument encodeMaybeDocument(MaybeDocument document) {
     com.google.firebase.firestore.proto.MaybeDocument.Builder builder =
         com.google.firebase.firestore.proto.MaybeDocument.newBuilder();
+
     if (document instanceof NoDocument) {
       NoDocument noDocument = (NoDocument) document;
       builder.setNoDocument(encodeNoDocument(noDocument));
       builder.setHasCommittedMutations(noDocument.hasCommittedMutations());
     } else if (document instanceof Document) {
       Document existingDocument = (Document) document;
-      builder.setDocument(encodeDocument(existingDocument));
+      // Use the memoized encoded form if it exists.
+      if (existingDocument.getProto() != null) {
+        builder.setDocument(existingDocument.getProto());
+      } else {
+        builder.setDocument(encodeDocument(existingDocument));
+      }
       builder.setHasCommittedMutations(existingDocument.hasCommittedMutations());
     } else if (document instanceof UnknownDocument) {
       builder.setUnknownDocument(encodeUnknownDocument((UnknownDocument) document));
@@ -84,13 +90,12 @@ public final class LocalSerializer {
   }
 
   /**
-   * Encodes a Document for local storage. This differs from the v1beta1 RPC serializer for
-   * Documents in that it preserves the updateTime, which is considered an output only value by the
-   * server.
+   * Encodes a Document for local storage. This differs from the v1 RPC serializer for Documents in
+   * that it preserves the updateTime, which is considered an output only value by the server.
    */
-  private com.google.firestore.v1beta1.Document encodeDocument(Document document) {
-    com.google.firestore.v1beta1.Document.Builder builder =
-        com.google.firestore.v1beta1.Document.newBuilder();
+  private com.google.firestore.v1.Document encodeDocument(Document document) {
+    com.google.firestore.v1.Document.Builder builder =
+        com.google.firestore.v1.Document.newBuilder();
     builder.setName(rpcSerializer.encodeKey(document.getKey()));
 
     ObjectValue value = document.getData();
@@ -105,7 +110,7 @@ public final class LocalSerializer {
 
   /** Decodes a Document proto to the equivalent model. */
   private Document decodeDocument(
-      com.google.firestore.v1beta1.Document document, boolean hasCommittedMutations) {
+      com.google.firestore.v1.Document document, boolean hasCommittedMutations) {
     DocumentKey key = rpcSerializer.decodeKey(document.getName());
     ObjectValue value = rpcSerializer.decodeFields(document.getFieldsMap());
     SnapshotVersion version = rpcSerializer.decodeVersion(document.getUpdateTime());

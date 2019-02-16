@@ -17,7 +17,7 @@ package com.google.firebase.firestore.local;
 import static com.google.firebase.firestore.testutil.TestUtil.deleteMutation;
 import static com.google.firebase.firestore.testutil.TestUtil.deletedDoc;
 import static com.google.firebase.firestore.testutil.TestUtil.doc;
-import static com.google.firebase.firestore.testutil.TestUtil.field;
+import static com.google.firebase.firestore.testutil.TestUtil.fieldMask;
 import static com.google.firebase.firestore.testutil.TestUtil.key;
 import static com.google.firebase.firestore.testutil.TestUtil.map;
 import static com.google.firebase.firestore.testutil.TestUtil.setMutation;
@@ -33,16 +33,15 @@ import com.google.firebase.firestore.model.MaybeDocument;
 import com.google.firebase.firestore.model.NoDocument;
 import com.google.firebase.firestore.model.SnapshotVersion;
 import com.google.firebase.firestore.model.UnknownDocument;
-import com.google.firebase.firestore.model.mutation.FieldMask;
 import com.google.firebase.firestore.model.mutation.Mutation;
 import com.google.firebase.firestore.model.mutation.MutationBatch;
 import com.google.firebase.firestore.model.mutation.PatchMutation;
 import com.google.firebase.firestore.remote.RemoteSerializer;
 import com.google.firebase.firestore.testutil.TestUtil;
-import com.google.firestore.v1beta1.DocumentMask;
-import com.google.firestore.v1beta1.Precondition;
-import com.google.firestore.v1beta1.Value;
-import com.google.firestore.v1beta1.Write;
+import com.google.firestore.v1.DocumentMask;
+import com.google.firestore.v1.Precondition;
+import com.google.firestore.v1.Value;
+import com.google.firestore.v1.Write;
 import com.google.protobuf.ByteString;
 import org.junit.Before;
 import org.junit.Test;
@@ -71,7 +70,7 @@ public final class LocalSerializerTest {
         new PatchMutation(
             key("bar/baz"),
             TestUtil.wrapObject(map("a", "b", "num", 1)),
-            FieldMask.fromCollection(asList(field("a"))),
+            fieldMask("a"),
             com.google.firebase.firestore.model.mutation.Precondition.exists(true));
     Mutation del = deleteMutation("baz/quux");
     Timestamp writeTime = Timestamp.now();
@@ -80,7 +79,7 @@ public final class LocalSerializerTest {
     Write setProto =
         Write.newBuilder()
             .setUpdate(
-                com.google.firestore.v1beta1.Document.newBuilder()
+                com.google.firestore.v1.Document.newBuilder()
                     .setName("projects/p/databases/d/documents/foo/bar")
                     .putFields("a", Value.newBuilder().setStringValue("b").build())
                     .putFields("num", Value.newBuilder().setIntegerValue(1).build()))
@@ -89,7 +88,7 @@ public final class LocalSerializerTest {
     Write patchProto =
         Write.newBuilder()
             .setUpdate(
-                com.google.firestore.v1beta1.Document.newBuilder()
+                com.google.firestore.v1.Document.newBuilder()
                     .setName("projects/p/databases/d/documents/bar/baz")
                     .putFields("a", Value.newBuilder().setStringValue("b").build())
                     .putFields("num", Value.newBuilder().setIntegerValue(1).build()))
@@ -128,7 +127,7 @@ public final class LocalSerializerTest {
     com.google.firebase.firestore.proto.MaybeDocument maybeDocProto =
         com.google.firebase.firestore.proto.MaybeDocument.newBuilder()
             .setDocument(
-                com.google.firestore.v1beta1.Document.newBuilder()
+                com.google.firestore.v1.Document.newBuilder()
                     .setName("projects/p/databases/d/documents/some/path")
                     .putFields("foo", Value.newBuilder().setStringValue("bar").build())
                     .setUpdateTime(
@@ -189,7 +188,7 @@ public final class LocalSerializerTest {
         new QueryData(query, targetId, sequenceNumber, QueryPurpose.LISTEN, version, resumeToken);
 
     // Let the RPC serializer test various permutations of query serialization.
-    com.google.firestore.v1beta1.Target.QueryTarget queryTarget =
+    com.google.firestore.v1.Target.QueryTarget queryTarget =
         remoteSerializer.encodeQueryTarget(query);
 
     com.google.firebase.firestore.proto.Target expected =
@@ -199,7 +198,7 @@ public final class LocalSerializerTest {
             .setSnapshotVersion(com.google.protobuf.Timestamp.newBuilder().setNanos(1039000))
             .setResumeToken(ByteString.copyFrom(resumeToken.toByteArray()))
             .setQuery(
-                com.google.firestore.v1beta1.Target.QueryTarget.newBuilder()
+                com.google.firestore.v1.Target.QueryTarget.newBuilder()
                     .setParent(queryTarget.getParent())
                     .setStructuredQuery(queryTarget.getStructuredQuery()))
             .build();

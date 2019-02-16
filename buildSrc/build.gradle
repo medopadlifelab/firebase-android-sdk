@@ -14,6 +14,7 @@
 
 plugins {
     id 'java-gradle-plugin'
+    id 'groovy'
 }
 
 repositories {
@@ -37,8 +38,13 @@ dependencies {
     implementation "com.jaredsburrows:gradle-license-plugin:0.8.1"
     implementation 'digital.wup:android-maven-publish:3.6.2'
 
+    implementation 'io.opencensus:opencensus-api:0.18.0'
+    implementation 'io.opencensus:opencensus-exporter-stats-stackdriver:0.18.0'
+    runtime 'io.opencensus:opencensus-impl:0.18.0'
+
     implementation 'com.android.tools.build:gradle:3.2.1'
     testImplementation 'junit:junit:4.12'
+    testImplementation 'org.json:json:20180813'
     testImplementation('org.spockframework:spock-core:1.1-groovy-2.4') {
         exclude group: 'org.codehaus.groovy'
     }
