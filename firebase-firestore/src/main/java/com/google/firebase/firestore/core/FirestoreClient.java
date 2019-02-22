@@ -95,43 +95,36 @@ public final class FirestoreClient implements RemoteStore.RemoteStoreCallback {
     TaskCompletionSource<User> firstUser = new TaskCompletionSource<>();
     final AtomicBoolean initialized = new AtomicBoolean(false);
     credentialsProvider.setChangeListener(
-        (User user) -> {
-          if (initialized.compareAndSet(false, true)) {
-            hardAssert(!firstUser.getTask().isComplete(), "Already fulfilled first user task");
-            firstUser.setResult(user);
-          } else {
-            asyncQueue.enqueueAndForget(
-                () -> {
-                    ImmutableSortedMap<DocumentKey, Document> docs = localStore.executeQuery(query);
-
-                    View view =
-                            new View(
-                                    query,
-                                    new ImmutableSortedSet<DocumentKey>(
-                                            Collections.emptyList(), DocumentKey::compareTo));
-                    View.DocumentChanges viewDocChanges = view.computeDocChanges(docs);
-                    return view.applyChanges(viewDocChanges).getSnapshot();
-                });
-          }
-        });
+            (User user) -> {
+              if (initialized.compareAndSet(false, true)) {
+                hardAssert(!firstUser.getTask().isComplete(), "Already fulfilled first user task");
+                firstUser.setResult(user);
+              } else {
+                asyncQueue.enqueueAndForget(
+                        () -> {
+                          Logger.debug(LOG_TAG, "Credential changed. Current user: %s", user.getUid());
+                          syncEngine.handleCredentialChange(user);
+                        });
+              }
+            });
 
     // Defer initialization until we get the current user from the changeListener. This is
     // guaranteed to be synchronously dispatched onto our worker queue, so we will be initialized
     // before any subsequently queued work runs.
     asyncQueue.enqueueAndForget(
-        () -> {
-          try {
-            // Block on initial user being available
-            User initialUser = Tasks.await(firstUser.getTask());
-            initialize(
-                context,
-                initialUser,
-                settings.isPersistenceEnabled(),
-                settings.getCacheSizeBytes());
-          } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException(e);
-          }
-        });
+            () -> {
+              try {
+                // Block on initial user being available
+                User initialUser = Tasks.await(firstUser.getTask());
+                initialize(
+                        context,
+                        initialUser,
+                        settings.isPersistenceEnabled(),
+                        settings.getCacheSizeBytes());
+              } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
+              }
+            });
   }
 
   public Task<Void> disableNetwork() {
