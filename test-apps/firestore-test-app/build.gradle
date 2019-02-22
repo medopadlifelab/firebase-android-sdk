@@ -17,7 +17,8 @@
 apply plugin: 'com.android.application'
 
 android {
-    testBuildType = project.testBuildType
+//    testBuildType = project.testBuildType
+    testBuildType = project.getProperties().get("testBuildType", "debug")
     compileSdkVersion project.targetSdkVersion
 
     defaultConfig {
