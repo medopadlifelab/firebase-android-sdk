@@ -14,20 +14,29 @@
 
 package com.google.firebase.auth;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.support.annotation.Nullable;
+
 import com.google.android.gms.common.annotation.KeepForSdk;
 import com.google.firebase.annotations.PublicApi;
+
 import java.util.Map;
 
 /** Result object that contains a Firebase Auth ID Token. */
 @PublicApi
-public class GetTokenResult {
+public class GetAccessTokenResult {
 
   private static final String EXPIRATION_TIMESTAMP = "exp";
   private static final String AUTH_TIMESTAMP = "auth_time";
   private static final String ISSUED_AT_TIMESTAMP = "iat";
   private static final String FIREBASE_KEY = "firebase";
   private static final String SIGN_IN_PROVIDER = "sign_in_provider";
+
+  private static final String APP_PREF_KEY = "app_pref_key";
+  private static final String JWT_TOKEN_KEY = "jwt_token_key";
+
+  private Context context;
 
   private String token;
   private Map<String, Object> claims;
@@ -37,9 +46,24 @@ public class GetTokenResult {
    * @param token represents the {@link String} access token.
    */
   @KeepForSdk
-  public GetTokenResult(String token, Map<String, Object> claims) {
+  public GetAccessTokenResult(Context context,String token, Map<String, Object> claims) {
+    this.context = context;
     this.token = token;
     this.claims = claims;
+  }
+
+  public void storeAccessToken(String token){
+    SharedPreferences sharedPref = context.getSharedPreferences(APP_PREF_KEY, Context.MODE_PRIVATE);
+    SharedPreferences.Editor editor = sharedPref.edit();
+    editor.putString(JWT_TOKEN_KEY, token);
+    editor.commit();
+  }
+
+  public String getAccessToken(){
+      SharedPreferences sharedPref = context.getSharedPreferences(APP_PREF_KEY, Context.MODE_PRIVATE);
+      String token = sharedPref.getString(JWT_TOKEN_KEY, null);
+
+      return token;
   }
 
   /**
@@ -50,7 +74,6 @@ public class GetTokenResult {
   @Nullable
   @PublicApi
   public String getToken() {
-    System.out.println("hi");
     return token;
   }
 

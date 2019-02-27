@@ -53,6 +53,8 @@ dependencies {
     // versions published to the root project' s build/ directory.
 
     implementation 'com.google.firebase:firebase-firestore:18.1.0-SNAPSHOT'
+    implementation 'com.google.firebase:firebase-common:16.1.0-SNAPSHOT'
+
 //    implementation project(':firebase-firestore')
 
     implementation 'com.google.firebase:firebase-core:16+'

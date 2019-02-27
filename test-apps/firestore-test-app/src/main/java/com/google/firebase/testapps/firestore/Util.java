@@ -10,6 +10,7 @@ import java.io.IOException;
 
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.FormBody;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -17,10 +18,13 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class Util {
-    private final static String customAuthAddress = "http://192.168.1.116:3000/auth/login";
-    private final static String registerAddress = "http://192.168.1.116:3000/auth/register";
+//    private final static String customAuthAddress = "http://35.246.33.237:8080/auth/login";
 
-    public final static String facebookUrl = "https://192.168.1.116:3000/auth/oauth2/facebook";
+    //new custom login server address
+    private final static String customAuthAddress = "http://35.242.161.36/login";
+    private final static String registerAddress = "http://35.242.161.36:8080/auth/register";
+
+    public final static String facebookUrl = "http://35.242.161.36:8080/auth/oauth2/facebook";
 
 
     public static final MediaType JSON
@@ -78,6 +82,42 @@ public class Util {
         return source.getTask();
     }
 
+    public static Task<String> getTokenWithUsernameAndPassword(String username, String password) {
+        final TaskCompletionSource<String> source = new TaskCompletionSource<>();
+
+        RequestBody body = new FormBody.Builder()
+                .add("username", username)
+                .add("password", password)
+                .build();
+        Request request = new Request.Builder()
+                .url(customAuthAddress)
+                .post(body)
+                .build();
+
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                source.setException(e);
+                e.printStackTrace();
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                String data = response.body().string();
+
+                System.out.println("response: " + data);
+
+                if (response.code() == 200) {
+                    //make sure it is a token , it could be other things even with http 200
+                    source.setResult(data);
+                }
+            }
+        });
+
+        return source.getTask();
+    }
+
     public static Task<String> createUser(String username, String password) {
         final TaskCompletionSource<String> source = new TaskCompletionSource<>();
 
@@ -102,6 +142,8 @@ public class Util {
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 String jsonData = response.body().string();
+
+                System.out.println("2data: " + jsonData);
 
                 try {
                     JSONObject obj = new JSONObject(jsonData);

@@ -35,6 +35,13 @@ import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GetAccessTokenResult;
+import com.google.firebase.auth.GetTokenResult;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreSettings;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class CustomAuthActivity extends BaseActivity implements
         View.OnClickListener {
@@ -48,10 +55,24 @@ public class CustomAuthActivity extends BaseActivity implements
 
     private FirebaseAuth mAuth;
 
+    private FirebaseFirestore db;
+
+    private static final Map<String, Object> restaurant = new HashMap<>();
+    static {
+        restaurant.put("location", "Google MTV");
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_emailpassword);
+
+        db = FirebaseFirestore.getInstance();
+        // Since offline persistence is enabled by default, the event listener is invoked even without
+        db.setFirestoreSettings(
+                new FirebaseFirestoreSettings.Builder().setTimestampsInSnapshotsEnabled(true).setPersistenceEnabled(false).build());
+        db.setLoggingEnabled(true);
+
 
         // Views
         mStatusTextView = findViewById(R.id.status);
@@ -137,47 +158,69 @@ public class CustomAuthActivity extends BaseActivity implements
 
         Task<AuthResult> combinedTask =
                 // STEP 1: User logins with life os username and password
-                Util.getCustomTokenWithUsernameAndPassword(username, password)
+                Util.getTokenWithUsernameAndPassword(username, password)
                         .continueWithTask(new Continuation<String, Task<AuthResult>>() {
                             @Override
                             public Task<AuthResult> then(@NonNull Task<String> task) throws Exception {
                                 // STEP 2: Use Firebase Custom Auth token to login Firebase
-                                String customToken = task.getResult();
-                                System.out.println("token: " + customToken);
+                                String accessToken = task.getResult();
+                                System.out.println("token: " + accessToken);
 
-                                if (task.isSuccessful() && customToken != null) {
-                                    return mAuth.signInWithCustomToken(customToken)
-                                            .addOnSuccessListener(
-                                                    new OnSuccessListener<AuthResult>() {
-                                                        @Override
-                                                        public void onSuccess(AuthResult authResult) {
-                                                            Toast.makeText(CustomAuthActivity.this, "Signed in", Toast.LENGTH_LONG).show();
+                                GetAccessTokenResult getAccessTokenResult = new GetAccessTokenResult(getBaseContext(), null, null);
+                                getAccessTokenResult.storeAccessToken(accessToken);
 
-                                                            // Sign in success, update UI with the signed-in user's information
-                                                            Log.d(TAG, "signInWithToken:success");
-                                                            FirebaseUser user = mAuth.getCurrentUser();
-                                                            updateUI(user);
+                                if (task.isSuccessful() && accessToken != null) {
 
-                                                            hideProgressDialog();
-                                                        }
-                                                    })
-                                            .addOnFailureListener(
-                                                    new OnFailureListener() {
-                                                        @Override
-                                                        public void onFailure(@NonNull Exception e) {
-                                                            Toast.makeText(CustomAuthActivity.this, e.toString(), Toast.LENGTH_LONG).show();
+                                    //TODO
+                                    //save token somewhere prefarably accessible through all firebase modules, show sign in successful message or error , implement firestore auth interfaces to send this token instead of the firebase id token
+                                    GetTokenResult getTokenResult;
 
-                                                            // If sign in fails, display a message to the user.
-                                                            Log.w(TAG, "signInWithEmail:failure", e);
-                                                            Toast.makeText(CustomAuthActivity.this, "Authentication failed.",
-                                                                    Toast.LENGTH_SHORT).show();
-                                                            updateUI(null);
-                                                            mStatusTextView.setText(R.string.auth_failed);
+                                    Toast.makeText(CustomAuthActivity.this, "Signed in", Toast.LENGTH_LONG).show();
 
-                                                            hideProgressDialog();
-                                                        }
-                                                    });
-                                } else if (task.isSuccessful() && customToken == null) {
+                                    // Sign in success, update UI with the signed-in user's information
+                                    Log.d(TAG, "signInWithUsernamePassword:success");
+
+                                    FirebaseUser user = mAuth.getCurrentUser();
+                                    updateUI(user);
+
+                                    hideProgressDialog();
+
+                                    Toast.makeText(CustomAuthActivity.this, "Signed in", Toast.LENGTH_LONG).show();
+                                    db.collection("restaurants").document("Baadal").set(restaurant);
+
+//
+//                                    return mAuth.signInWithCustomToken(accessToken)
+//                                            .addOnSuccessListener(
+//                                                    new OnSuccessListener<AuthResult>() {-
+//                                                        @Override
+//                                                        public void onSuccess(AuthResult authResult) {
+//                                                            Toast.makeText(CustomAuthActivity.this, "Signed in", Toast.LENGTH_LONG).show();
+//
+//                                                            // Sign in success, update UI with the signed-in user's information
+//                                                            Log.d(TAG, "signInWithToken:success");
+//                                                            FirebaseUser user = mAuth.getCurrentUser();
+//                                                            updateUI(user);
+//
+//                                                            hideProgressDialog();
+//                                                        }
+//                                                    })
+//                                            .addOnFailureListener(
+//                                                    new OnFailureListener() {
+//                                                        @Override
+//                                                        public void onFailure(@NonNull Exception e) {
+//                                                            Toast.makeText(CustomAuthActivity.this, e.toString(), Toast.LENGTH_LONG).show();
+//
+//                                                            // If sign in fails, display a message to the user.
+//                                                            Log.w(TAG, "signInWithEmail:failure", e);
+//                                                            Toast.makeText(CustomAuthActivity.this, "Authentication failed.",
+//                                                                    Toast.LENGTH_SHORT).show();
+//                                                            updateUI(null);
+//                                                            mStatusTextView.setText(R.string.auth_failed);
+//
+//                                                            hideProgressDialog();
+//                                                        }
+//                                                    });
+                                } else if (task.isSuccessful() && accessToken == null) {
                                     hideProgressDialog();
                                 }
 

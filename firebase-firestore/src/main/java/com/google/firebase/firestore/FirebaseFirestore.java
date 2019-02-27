@@ -30,6 +30,7 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.annotations.PublicApi;
 import com.google.firebase.auth.internal.InternalAuthProvider;
 import com.google.firebase.firestore.auth.CredentialsProvider;
+import com.google.firebase.firestore.auth.CustomCredentialsProvider;
 import com.google.firebase.firestore.auth.EmptyCredentialsProvider;
 import com.google.firebase.firestore.auth.FirebaseAuthCredentialsProvider;
 import com.google.firebase.firestore.core.DatabaseInfo;
@@ -95,6 +96,7 @@ public class FirebaseFirestore {
       @NonNull FirebaseApp app,
       @Nullable InternalAuthProvider authProvider,
       @NonNull String database) {
+
     String projectId = app.getOptions().getProjectId();
     if (projectId == null) {
       throw new IllegalArgumentException("FirebaseOptions.getProjectId() cannot be null");
@@ -108,7 +110,10 @@ public class FirebaseFirestore {
       Logger.debug(TAG, "Firebase Auth not available, falling back to unauthenticated usage.");
       provider = new EmptyCredentialsProvider();
     } else {
-      provider = new FirebaseAuthCredentialsProvider(authProvider);
+//      provider = new FirebaseAuthCredentialsProvider(authProvider);
+
+      //TODO need more work
+      provider = new CustomCredentialsProvider();
     }
 
     queue.enqueueAndForget(

@@ -15,6 +15,8 @@
 package com.google.firebase.firestore.auth;
 
 import android.support.annotation.NonNull;
+
+import com.google.android.gms.tasks.Continuation;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.GetTokenResult;
@@ -88,24 +90,27 @@ public final class FirebaseAuthCredentialsProvider extends CredentialsProvider {
     // FirebaseFirestoreException) if there is a token change while the request is outstanding.
     final int savedCounter = tokenCounter;
     return res.continueWith(
-        task -> {
-          synchronized (this) {
-            // Cancel the request since the token changed while the request was outstanding so the
-            // response is potentially for a previous user (which user, we can't be sure).
-            if (savedCounter != tokenCounter) {
-              throw new FirebaseFirestoreException(
-                  "getToken aborted due to token change", Code.ABORTED);
-            }
-            if (!task.isSuccessful()) {
-              throw task.getException();
-            } else {
+            new Continuation<GetTokenResult, String>() {
+              @Override
+              public String then(@NonNull Task<GetTokenResult> task) throws Exception {
+                synchronized (FirebaseAuthCredentialsProvider.this) {
+                  // Cancel the request since the token changed while the request was outstanding so the
+                  // response is potentially for a previous user (which user, we can't be sure).
+                  if (savedCounter != tokenCounter) {
+                    throw new FirebaseFirestoreException(
+                            "getToken aborted due to token change", Code.ABORTED);
+                  }
+                  if (!task.isSuccessful()) {
+                    throw task.getException();
+                  } else {
 
-              String token = task.getResult().getToken();
-              System.out.println("AccessToken: "+ token);
-              return token;
-            }
-          }
-        });
+                    String token = task.getResult().getToken();
+                    System.out.println("AccessToken: " + token);
+                    return token;
+                  }
+                }
+              }
+            });
   }
 
   @Override
